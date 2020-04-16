@@ -1,2 +1,2 @@
 def new():
-    pass
+    print("hello world")
