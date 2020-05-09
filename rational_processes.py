@@ -1,10 +1,7 @@
-from sympy import factor, sympify, latex, factor_list, expand
+from sympy import cancel, expand, factor, latex, pretty_print, simplify, sympify, factor_list
 from sympy.parsing.latex import parse_latex
 from re import sub as subsitute, findall, match
 from collections import Counter
-class ExpressionData(object):
-    def __init__(self, list_data):
-        pass
 
 class RationalObject(object): # index
     def __init__(self, numerator, denomenator):
@@ -42,9 +39,13 @@ class RationalObject(object): # index
     def __repr__(self):
         return str(self)
 
-    def __eq__(self, other_instance):
-        if str(self) == str(other_instance):
-            return True
+    def __eq__(self, other):
+        if isinstance(other, RationalObject):
+            if sympify(str(self)) == sympify(str(other)):
+                return True
+        else:
+            if str(self) == str(other):
+                return True
 
 
 
@@ -55,17 +56,21 @@ class FactoredRationalObject(object):
     def __init__(self, numerator, denomenator):
         self.numerator = []
         self.denomenator = []
-        
+    
         for n in numerator:
             without_paren = subsitute(r"\(|\)", "", str(n))
-            if n != 1 or len(without_paren) < 2:
+            if n != 1 or len(numerator) == 1:
                 self.numerator.append(n)
-        
+ 
         for d in denomenator:
             without_paren = subsitute(r"\(|\)", "", str(d))
-            if d != 1 or len(without_paren) < 2:
+            if d != 1 or len(denomenator) == 1:
                 self.denomenator.append(d)
 
+        if not self.numerator:
+            self.numerator.append(1)
+        if not self.denomenator:
+            self.denomenator.append(1)
         
         
 #make all factor_list so easy lc??
@@ -125,6 +130,208 @@ class FactoredRationalObject(object):
     def __repr__(self):
         return str(self)
 
-    def __eq__(self, other_instance):
-        if str(self) == str(other_instance):
+    def __eq__(self, other):
+        if isinstance(other, FactoredRationalObject):
+            n1, n2 = Counter(self.numerator).elements, Counter(other.numerator).elements
+            d1, d2 = Counter(self.denomenator).elements, Counter(other.denomenator).elements
+            if n1 == n2 and d1 == d2:
+                return True
+        if str(self) == str(other):
             return True
+
+
+
+
+
+
+
+
+def expression_data_modify(func):
+    def wrapper(expression_data):
+        output = []
+        for part in expression_data:
+            if isinstance(part, (RationalObject, FactoredRationalObject)):
+                output.append(func(part))
+            else:
+                output.append(part)
+        return output
+    return wrapper
+
+
+
+def simp_negatives(expression_data):
+    """
+    Distributes negatives and turns subtraction signs into addition
+
+    Returns expression_data without double/triple/quadruple negatives or subtraction signs
+    """
+    output =[]
+    for index, part in enumerate(expression_data):
+        if isinstance(part, RationalObject):
+            
+            if expression_data[index-1] == "-":
+                negative_numerator = "-" + part.numerator
+            else:
+                negative_numerator = part.numerator
+
+            non_neg_num, non_neg_denom = str(sympify(negative_numerator)), str(sympify(part.denomenator))
+            output.append(RationalObject(non_neg_num, non_neg_denom))
+        
+        elif part == "-" and len(output) % 2 == 1:
+            output.append("+")
+            
+        elif part != "-":
+            output.append(part)
+    
+    return output
+
+
+def factor_rationals(expression_data, factor_numerator = True):
+    factored_expression_data = []
+    for part in expression_data: 
+        
+        if isinstance(part, RationalObject):
+            factored_numerator, factored_denomenator = factor(part.numerator), factor(part.denomenator)
+            factored_expression_data.append(FactoredRationalObject.from_factored_str(factored_numerator, factored_denomenator, factor_numerator))
+        else:
+            factored_expression_data.append(part)
+
+    return factored_expression_data
+
+
+
+
+def cancel_factors(expression_data):
+    canceled_expression_data = []
+    numerators, denomenators = get_all_nd(expression_data)
+    for part in expression_data:
+        
+        if isinstance(part, FactoredRationalObject):
+            canceled_n, denomenators = cancel_helper(part.numerator, denomenators)
+            canceled_d, numerators = cancel_helper(part.denomenator, numerators)
+            canceled_expression_data.append(FactoredRationalObject(canceled_n, canceled_d))
+        else:
+            canceled_expression_data.append(part)
+    
+    return canceled_expression_data
+
+def get_all_nd(expression_data):
+        numerators = []
+        denomenators = []
+        for part in expression_data:
+            if isinstance(part, (RationalObject,FactoredRationalObject)):
+                numerators += part.numerator
+                denomenators += part.denomenator
+        return numerators, denomenators
+                
+def cancel_helper(n_or_d, comparison_list):
+    canceled_n_or_d = []
+    for factor in n_or_d:
+        if factor not in comparison_list:
+            canceled_n_or_d.append(factor)
+        else:
+            comparison_list.remove(factor)
+    return canceled_n_or_d, comparison_list
+
+
+def multiply_factors(expression_data):
+    numerator_factors, denomenator_factors = get_all_nd(expression_data)
+    return [FactoredRationalObject(numerator_factors, denomenator_factors)]
+    
+        
+def cancel_lc(expression_data):
+    output = []
+    for part in expression_data:
+        if isinstance(part, FactoredRationalObject):
+            n_lc, n_no_lc, d_lc, d_no_lc = part.get_lc()
+            a, b = n_lc, d_lc
+            while b:
+                a, b = b, a%b
+            output.append(FactoredRationalObject([int(n_lc/a)] + n_no_lc, [int(d_lc/a)] + d_no_lc))
+        
+        else:
+            output.append(part)
+    
+    return output
+
+
+
+
+
+
+def apply_lcd(expression_data, expression):
+    lcd = find_lcd(expression_data)
+    output = []
+    for part in expression_data:
+        if isinstance(part, FactoredRationalObject):
+            if expression:
+                new_factors = list((Counter(lcd)-Counter(part.denomenator)).elements())
+                new_n, new_d = part.numerator + new_factors, lcd
+            else:
+                new_n, new_d = part.numerator + lcd, part.denomenator
+            
+            output.append(FactoredRationalObject(new_n, new_d))
+        else:
+            output.append(part)
+    return output
+
+
+def find_lcd(expression_data):
+    lcd = []
+    for part in expression_data:
+        if isinstance(part, FactoredRationalObject):
+            lcd += list((Counter(part.denomenator)-Counter(lcd)).elements())
+
+    return lcd
+
+
+def expand_numerator(expression_data):
+    output = []
+    for part in expression_data:
+        if isinstance(part, FactoredRationalObject):
+            numerator_sympy = sympify(part.get_n_str())
+            expanded_numerator = numerator_sympy.expand()
+            output.append(FactoredRationalObject([expanded_numerator], part.denomenator))
+        else:
+            output.append(part)
+    return output
+
+
+def final_add(expression_data):  #fixxx
+    output_numerator = []
+    for part in expression_data:
+        if isinstance(part, FactoredRationalObject):
+            output_numerator.append(part.get_n_str())
+            output_denomenator = part.denomenator
+    numerator_sympy = sympify("+".join(output_numerator))
+    final_numerator = simplify(numerator_sympy)
+    
+    return [FactoredRationalObject([final_numerator], output_denomenator)]
+    
+
+
+
+
+
+
+def cancel_equations(expression_data):
+    output = []
+    for part in expression_data:
+        if isinstance(part, FactoredRationalObject):
+            new_n = list((Counter(part.numerator)-Counter(part.denomenator)).elements())
+            new_d = list((Counter(part.denomenator)-Counter(part.numerator)).elements())
+            output.append(FactoredRationalObject(new_n, new_d))
+        else:
+            output.append(part)
+
+    return output
+
+
+def get_sympy_str(expression_data):
+    output = []
+    for part in expression_data:
+        if isinstance(part, (RationalObject, FactoredRationalObject)):
+            output.append(str(part))
+        else:
+            output.append(part)
+    return sympify("".join(output), evaluate=False)
