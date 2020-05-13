@@ -5,12 +5,16 @@ from collections import Counter
 
 class RationalObject(object): # index
     def __init__(self, numerator, denomenator):
+        if not denomenator:
+            denomenator = "1"
         processed_numerator, processed_denomenator = self.balance_parenthesis(numerator), self.balance_parenthesis(denomenator)
         self.numerator = processed_numerator  #check for parenthesis here?
         self.denomenator = processed_denomenator
-
+        
     def balance_parenthesis(self, n_or_d):
         
+        n_or_d = str(n_or_d)
+
         eliminated_paren = list(subsitute(r"^\(\(?|\)$", "", n_or_d))
         balanced_paren = []
 
@@ -34,6 +38,8 @@ class RationalObject(object): # index
     def __str__(self):
         processed_numerator = "({})".format(self.numerator)
         processed_denomenator = "({})".format(self.denomenator)
+        if processed_denomenator == "(1)":
+            return processed_numerator
         return "({} / {})".format(processed_numerator, processed_denomenator)
 
     def __repr__(self):
@@ -146,6 +152,28 @@ class FactoredRationalObject(object):
 
 
 
+
+
+
+
+
+class ComplexRationalObject(object):
+    """
+    [expression data with RationalObjects]/[expression_data with RationalObjects]
+    """
+    def __init__(self, numerator, denomenator):
+        self.numerator = [term for term in numerator if term != "(" and term != ")"]
+        self.denomenator = [term for term in denomenator if term != "(" and term != ")"]
+
+    def __str__(self):
+        output = ""
+        n_str = str(data_to_sympy_expression(self.numerator))
+        d_str = str(data_to_sympy_expression(self.denomenator))
+        return "({})/({})".format(n_str, d_str)
+
+    def __repr__(self):
+        return str(self)
+
 def expression_data_modify(func):
     def wrapper(expression_data):
         output = []
@@ -159,7 +187,7 @@ def expression_data_modify(func):
 
 
 
-def simp_negatives(expression_data):
+def distribute_negatives(expression_data):
     """
     Distributes negatives and turns subtraction signs into addition
 
@@ -170,7 +198,7 @@ def simp_negatives(expression_data):
         if isinstance(part, RationalObject):
             
             if expression_data[index-1] == "-":
-                negative_numerator = "-" + part.numerator
+                negative_numerator = "-({})".format(part.numerator)
             else:
                 negative_numerator = part.numerator
 
@@ -201,28 +229,33 @@ def factor_rationals(expression_data, factor_numerator = True):
 
 
 
-def cancel_factors(expression_data):
-    canceled_expression_data = []
+def cancel_expression_factors(expression_data):
+    output = []
     numerators, denomenators = get_all_nd(expression_data)
     for part in expression_data:
         
         if isinstance(part, FactoredRationalObject):
             canceled_n, denomenators = cancel_helper(part.numerator, denomenators)
             canceled_d, numerators = cancel_helper(part.denomenator, numerators)
-            canceled_expression_data.append(FactoredRationalObject(canceled_n, canceled_d))
+            output.append(FactoredRationalObject(canceled_n, canceled_d))
         else:
-            canceled_expression_data.append(part)
+            output.append(part)
     
-    return canceled_expression_data
+    return output
 
 def get_all_nd(expression_data):
-        numerators = []
-        denomenators = []
-        for part in expression_data:
-            if isinstance(part, (RationalObject,FactoredRationalObject)):
-                numerators += part.numerator
-                denomenators += part.denomenator
-        return numerators, denomenators
+    numerators = []
+    denomenators = []
+    for part in expression_data:
+        if isinstance(part, FactoredRationalObject):
+            numerators += part.numerator
+            denomenators += part.denomenator
+        
+        elif isinstance(part, RationalObject):
+            numerators.append(part.numerator)
+            denomenators.append(part.denomenator)
+   
+    return numerators, denomenators
                 
 def cancel_helper(n_or_d, comparison_list):
     canceled_n_or_d = []
@@ -234,12 +267,12 @@ def cancel_helper(n_or_d, comparison_list):
     return canceled_n_or_d, comparison_list
 
 
-def multiply_factors(expression_data):
+def final_multiply(expression_data):
     numerator_factors, denomenator_factors = get_all_nd(expression_data)
     return [FactoredRationalObject(numerator_factors, denomenator_factors)]
     
         
-def cancel_lc(expression_data):
+def simp_ints(expression_data):
     output = []
     for part in expression_data:
         if isinstance(part, FactoredRationalObject):
@@ -255,12 +288,7 @@ def cancel_lc(expression_data):
     return output
 
 
-
-
-
-
-def apply_lcd(expression_data, expression):
-    lcd = find_lcd(expression_data)
+def apply_lcd(expression_data, lcd, expression):
     output = []
     for part in expression_data:
         if isinstance(part, FactoredRationalObject):
@@ -285,6 +313,7 @@ def find_lcd(expression_data):
     return lcd
 
 
+
 def expand_numerator(expression_data):
     output = []
     for part in expression_data:
@@ -307,27 +336,10 @@ def final_add(expression_data):  #fixxx
     final_numerator = simplify(numerator_sympy)
     
     return [FactoredRationalObject([final_numerator], output_denomenator)]
-    
 
 
 
-
-
-
-def cancel_equations(expression_data):
-    output = []
-    for part in expression_data:
-        if isinstance(part, FactoredRationalObject):
-            new_n = list((Counter(part.numerator)-Counter(part.denomenator)).elements())
-            new_d = list((Counter(part.denomenator)-Counter(part.numerator)).elements())
-            output.append(FactoredRationalObject(new_n, new_d))
-        else:
-            output.append(part)
-
-    return output
-
-
-def get_sympy_str(expression_data):
+def data_to_sympy_expression(expression_data):
     output = []
     for part in expression_data:
         if isinstance(part, (RationalObject, FactoredRationalObject)):
